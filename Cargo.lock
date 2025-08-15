@@ -1074,6 +1074,7 @@ dependencies = [
  "egui",
  "expectest",
  "iced",
+ "lazy_static",
  "ribir",
  "slint",
  "test-case",
