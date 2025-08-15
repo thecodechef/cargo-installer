@@ -1,0 +1,28 @@
+[package]
+authors = ["Wilson Lin <code@wilsonl.in>"]
+categories = ["development-tools::build-utils", "web-programming"]
+description = "JavaScript parsing library"
+edition = "2021"
+homepage = "https://github.com/wilsonzlin/parse-js"
+keywords = ["javascript", "parse", "parser", "js", "ecmascript"]
+license = "Apache-2.0"
+name = "parse-js"
+repository = "https://github.com/wilsonzlin/parse-js"
+version = "0.17.0"
+
+[dependencies]
+aho-corasick = "0.7"
+bumpalo = { version = "3", features = ["collections"] }
+hashbrown = { version = "0.13", features = ["bumpalo"] }
+lazy_static = "1.4"
+memchr = "2"
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+strum = { version = "0.24", optional = true }
+strum_macros = { version = "0.24", optional = true }
+
+[dev-dependencies]
+similar = "2.1.0"
+
+[features]
+serialize = ["dep:serde", "dep:serde_json", "dep:strum", "dep:strum_macros"]

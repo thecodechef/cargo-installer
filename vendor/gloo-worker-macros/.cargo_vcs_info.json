@@ -1,0 +1,6 @@
+{
+  "git": {
+    "sha1": "0c5cf4442c8655ea8200369ff30b1955c81b7254"
+  },
+  "path_in_vcs": "crates/worker-macros"
+}

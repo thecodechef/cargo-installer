@@ -1,0 +1,8 @@
+language: rust
+sudo: false
+
+rust:
+    - stable
+    - nightly
+
+script: ./ci/build-and-test.sh

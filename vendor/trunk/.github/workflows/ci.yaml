@@ -1,0 +1,268 @@
+name: CI
+on:
+  push:
+    branches:
+      - main
+      - release/*
+  pull_request:
+    branches:
+      - main
+      - release/*
+  merge_group:
+    types:
+      - checks_requested
+
+jobs:
+  lint:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Setup | Checkout
+        uses: actions/checkout@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-lint-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Setup | Disable rustup self-update
+        # workaround for: https://github.com/rust-lang/rustup/issues/3709
+        run: |
+          rustup set auto-self-update disable
+
+      - name: Setup | Toolchain (clippy)
+        run: |
+          rustup toolchain install stable --component clippy
+          rustup default stable
+
+      - name: Build | Clippy
+        run: |
+          cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Build | Rustfmt
+        run: cargo fmt -- --check
+
+  docs:
+    uses: ./.github/workflows/docs.yaml
+
+  check:
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        rust:
+          - stable
+          - 1.81.0 # MSRV
+    steps:
+      - name: Setup | Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup | Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-check-${{ matrix.rust }}-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Setup | Disable rustup self-update
+        # workaround for: https://github.com/rust-lang/rustup/issues/3709
+        run: |
+          rustup set auto-self-update disable
+
+      - name: Setup | Rust
+        run: |
+          rustup toolchain install ${{ matrix.rust }}
+          rustup default ${{ matrix.rust }}
+
+      - name: Build | Check
+        run: cargo check --all
+
+      - name: Setup | binstall
+        run: |
+          curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
+
+      - name: Setup | check-all-features
+        run: |
+          cargo binstall -y cargo-all-features
+
+      - name: Build | Check all features
+        run: |
+          cargo check-all-features
+
+
+  test:
+    needs: check # Ensure check is run first.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-22.04, macos-14, windows-2022 ]
+        include:
+          - os: ubuntu-22.04
+            binPath: target/debug/trunk
+            install: |
+              sudo apt install -y libssl-dev
+          - os: macos-14
+            binPath: target/debug/trunk
+          - os: windows-2022
+            binPath: target/debug/trunk.exe
+            install: |
+              echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
+              vcpkg install openssl:x64-windows-static-md
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Setup | Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup | Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-test-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Setup | Export GitHub Actions cache environment variables
+        uses: actions/github-script@v7
+        if: runner.os == 'Windows'
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+            core.exportVariable('VCPKG_BINARY_SOURCES', 'clear;x-gha,readwrite');
+
+      - name: Setup | Install dependencies
+        run: ${{ matrix.install }}
+
+      - name: Build | Test
+        run: cargo test
+
+      # Run the CLI to ensure we don't have any subtle runtime issues.
+      - name: Build | Run
+        run: cargo run -- -h
+
+      # Upload the debug binary for testing examples later
+      - name: Upload | For testing
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-cli-${{ matrix.os }}
+          path: ${{ matrix.binPath }}
+          if-no-files-found: error
+
+  test-examples:
+    needs: test # Ensure test is run first.
+    strategy:
+      fail-fast: false
+      max-parallel: 32
+      matrix:
+        os: [ ubuntu-22.04, macos-14, windows-2022 ]
+        example:
+          - cargo-manifest
+          - cdylib
+          - hooks
+          - initializer
+          - leptos
+          - no-rust
+          - proxy
+          - seed
+          - target-path
+          - vanilla
+          - webworker
+          - webworker-gloo
+          - webworker-module
+          - wasm_threads
+          - yew
+          - yew-tailwindcss
+          - yew-tls
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Setup | Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup | Disable rustup self-update
+        # workaround for: https://github.com/rust-lang/rustup/issues/3709
+        run: |
+          rustup set auto-self-update disable
+
+      - name: Setup | Rust
+        run: |
+          rustup toolchain install stable --target wasm32-unknown-unknown
+          rustup default stable
+
+      - name: Setup | Download CLI
+        uses: actions/download-artifact@v4
+        with:
+          name: test-cli-${{ matrix.os }}
+
+      - name: Setup | Make executable
+        if: ${{ !contains(matrix.os, 'windows') }}
+        run: chmod a+x $GITHUB_WORKSPACE/trunk
+
+      - name: Setup | Cache | Example ${{ matrix.example }} on ${{ matrix.os }}
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            examples/${{ matrix.example }}/target
+          key: wasm32-example-${{ matrix.example }}-${{ matrix.os }}-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build | Examples | ${{ matrix.example }} on ${{ matrix.os }}
+        shell: bash
+        env:
+          # for the CI we need to disable those checks, as we may run with a pre-release version, which would force us to
+          # replace all version requirements with pre-release requirements for this version.
+          TRUNK_REQUIRED_VERSION: '*'
+        run: |
+          $GITHUB_WORKSPACE/trunk --config=examples/${{ matrix.example }} build
+
+  examples:
+    runs-on: ubuntu-22.04
+    needs:
+      - test-examples
+    if: always()
+    steps:
+      - name: Success
+        if: ${{ !(contains(needs.*.result, 'failure')) }}
+        run: exit 0
+      - name: Failure
+        if: ${{ contains(needs.*.result, 'failure') }}
+        run: exit 1
+
+  uncommitted:
+    runs-on: ubuntu-22.04
+    needs:
+      - test
+    steps:
+      - name: Setup | Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup | Download CLI
+        uses: actions/download-artifact@v4
+        with:
+          name: test-cli-ubuntu-22.04
+
+      - name: Setup | Make executable
+        run: chmod a+x $GITHUB_WORKSPACE/trunk
+
+      - name: Generate | Config Schema
+        run: |
+          $GITHUB_WORKSPACE/trunk config generate-schema schemas/config.json
+
+      - name: Diff | Config Schema
+        run: |
+          if ! git diff --quiet schemas/config.json; then
+              echo "::error::Uncommitted changes for schemas/config.json (run 'cargo run -- config generate-schema schemas/config.json' after making changes to the configuration model)"
+              exit 1
+          fi

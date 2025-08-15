@@ -1,0 +1,34 @@
+[package]
+name = "priority-queue"
+version = "1.4.0"
+authors = ["Gianmarco Garrisi <gianmarcogarrisi@tutanota.com>"]
+description = "A Priority Queue implemented as a heap with a function to efficiently change the priority of an item."
+repository = "https://github.com/garro95/priority-queue"
+documentation = "https://docs.rs/priority-queue"
+readme = "README.md"
+keywords = ["priority", "queue", "heap"]
+categories = ["data-structures", "algorithms"]
+license = "LGPL-3.0 OR MPL-2.0"
+edition = "2018"
+
+build = "build.rs"
+
+[build-dependencies]
+autocfg = "1"
+
+[dependencies]
+indexmap = "1"
+serde = { version = "1", optional = true }
+
+[dev-dependencies]
+serde_test = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = {version= "1", features = ["v4", "serde"] }
+hashbrown = "0.13"
+
+[features]
+benchmarks = []
+
+[workspace]
+members = ["test-nostd"]
